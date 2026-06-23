@@ -138,7 +138,15 @@ export default function Home() {
 
         <div>
           <p className="mb-2 text-sm font-medium">Positions ouvertes</p>
-          <PositionsList positions={state.positions} prices={prices} onClose={handleClosePosition} />
+          <PositionsList
+            positions={state.positions}
+            prices={prices}
+            cash={state.cash}
+            onClose={handleClosePosition}
+            onAddToPosition={(id, margin, price) =>
+              dispatch({ type: 'ADD_TO_POSITION', payload: { id, margin, price } })
+            }
+          />
         </div>
 
         <div>

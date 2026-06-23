@@ -184,7 +184,11 @@ export default function CompetitionPage() {
           <PositionsList
             positions={tradingState.positions}
             prices={prices}
+            cash={tradingState.cash}
             onClose={handleClosePosition}
+            onAddToPosition={(id, margin, price) =>
+              dispatch({ type: 'ADD_TO_POSITION', payload: { id, margin, price } })
+            }
           />
         </div>
 

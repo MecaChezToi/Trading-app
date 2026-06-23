@@ -33,6 +33,7 @@ export type TradingAction =
       };
     }
   | { type: 'CLOSE_POSITION'; payload: { id: string; exitPrice: number; reason?: string } }
+  | { type: 'ADD_TO_POSITION'; payload: { id: string; margin: number; price: number } }
   | { type: 'CANCEL_PENDING_ORDER'; payload: { id: string } }
   | {
       type: 'CHECK_TRIGGERS';
@@ -182,6 +183,37 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
           amount: margin,
         });
       }
+      return next;
+    }
+
+    case 'ADD_TO_POSITION': {
+      const { id, margin, price } = action.payload;
+      if (margin <= 0 || margin > state.cash) return state;
+      const pos = state.positions.find((p) => p.id === id);
+      if (!pos) return state;
+
+      const next = structuredClone(state);
+      const target = next.positions.find((p) => p.id === id)!;
+
+      const addedQty = (margin * target.leverage) / price;
+      const totalQty = target.qty + addedQty;
+      // prix moyen pondéré (VWAP)
+      const avgEntry = (target.qty * target.entryPrice + addedQty * price) / totalQty;
+      const totalMargin = target.margin + margin;
+
+      target.qty = totalQty;
+      target.entryPrice = avgEntry;
+      target.margin = totalMargin;
+
+      next.cash -= margin;
+
+      pushHistory(next, {
+        pair: pos.pair,
+        type: `ADD ${pos.side} ${pos.leverage}x`,
+        price,
+        amount: margin,
+      });
+
       return next;
     }
 
