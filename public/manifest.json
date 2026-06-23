@@ -1,0 +1,24 @@
+{
+  "name": "Paper Trading Crypto",
+  "short_name": "Paper Trading",
+  "description": "Simulateur de trading crypto avec levier, prix temps réel et défis personnalisés",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1d23",
+  "theme_color": "#1a1d23",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
