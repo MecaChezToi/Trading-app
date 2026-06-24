@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { supabase, CompetitionPlayer } from '@/lib/supabase';
+import { getSupabase, CompetitionPlayer } from '@/lib/supabase';
 import { createDefaultState, TradingState } from '@/types/trading';
 import { tradingReducer } from '@/lib/tradingReducer';
 import { computeTotal } from '@/lib/trading';
@@ -93,7 +93,7 @@ export function useCompetition(prices: Record<string, number>) {
     const trades_won = tradingState.closedTrades.filter(t => t.pnl > 0).length;
     const trades_lost = tradingState.closedTrades.filter(t => t.pnl <= 0).length;
 
-    await supabase
+    await getSupabase()
       .from('competition_players')
       .update({
         balance: Math.round(total * 100) / 100,
@@ -117,7 +117,7 @@ export function useCompetition(prices: Record<string, number>) {
   // realtime leaderboard
   useEffect(() => {
     const fetchLeaderboard = async () => {
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from('competition_players')
         .select('*')
         .order('pnl_pct', { ascending: false });
@@ -125,7 +125,7 @@ export function useCompetition(prices: Record<string, number>) {
     };
     fetchLeaderboard();
 
-    const channel = supabase
+    const sb = getSupabase(); const channel = sb
       .channel('competition_leaderboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'competition_players' }, () => {
         fetchLeaderboard();
@@ -133,7 +133,7 @@ export function useCompetition(prices: Record<string, number>) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      getSupabase().removeChannel(channel);
     };
   }, []);
 
@@ -145,7 +145,7 @@ export function useCompetition(prices: Record<string, number>) {
       if (!trimmed) { setJoinError('Entre un pseudo.'); setLoadingJoin(false); return; }
 
       // check if pseudo already exists
-      const { data: existing } = await supabase
+      const { data: existing } = await getSupabase()
         .from('competition_players')
         .select('id, pseudo, balance, starting_balance')
         .eq('pseudo', trimmed)
@@ -160,7 +160,7 @@ export function useCompetition(prices: Record<string, number>) {
         sb = existing.starting_balance;
       } else {
         // new player
-        const { data: inserted, error } = await supabase
+        const { data: inserted, error } = await getSupabase()
           .from('competition_players')
           .insert({ pseudo: trimmed, balance: startingBalance, starting_balance: startingBalance, pnl_pct: 0, trades_won: 0, trades_lost: 0 })
           .select('id')
@@ -202,7 +202,7 @@ export function useCompetition(prices: Record<string, number>) {
     const newComp = { ...compState, startingBalance };
     setCompState(newComp);
     saveCompState(newComp);
-    await supabase.from('competition_players').update({
+    await getSupabase().from('competition_players').update({
       balance: startingBalance,
       starting_balance: startingBalance,
       pnl_pct: 0,

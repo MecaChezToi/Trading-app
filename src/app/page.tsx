@@ -55,6 +55,7 @@ export default function Home() {
     orderType: OrderType;
     margin: number;
     leverage: number;
+    marginMode: import('@/types/trading').MarginMode;
     limitPrice?: number;
     tp?: number | null;
     sl?: number | null;
@@ -69,6 +70,7 @@ export default function Home() {
         orderType: params.orderType,
         margin: params.margin,
         leverage: params.leverage,
+        marginMode: params.marginMode,
         price,
         limitPrice: params.limitPrice,
         tp: params.tp,
@@ -142,9 +144,13 @@ export default function Home() {
             positions={state.positions}
             prices={prices}
             cash={state.cash}
+            tradingState={state}
             onClose={handleClosePosition}
             onAddToPosition={(id, margin, price) =>
               dispatch({ type: 'ADD_TO_POSITION', payload: { id, margin, price } })
+            }
+            onSetMarginMode={(id, mode) =>
+              dispatch({ type: 'SET_MARGIN_MODE', payload: { id, mode } })
             }
           />
         </div>

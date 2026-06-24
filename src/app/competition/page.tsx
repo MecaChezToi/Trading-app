@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { IconArrowLeft, IconRefresh, IconLogout } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -58,6 +60,7 @@ export default function CompetitionPage() {
     orderType: OrderType;
     margin: number;
     leverage: number;
+    marginMode: import('@/types/trading').MarginMode;
     limitPrice?: number;
     tp?: number | null;
     sl?: number | null;
@@ -72,6 +75,7 @@ export default function CompetitionPage() {
         orderType: params.orderType,
         margin: params.margin,
         leverage: params.leverage,
+        marginMode: params.marginMode,
         price,
         limitPrice: params.limitPrice,
         tp: params.tp,
@@ -185,9 +189,13 @@ export default function CompetitionPage() {
             positions={tradingState.positions}
             prices={prices}
             cash={tradingState.cash}
+            tradingState={tradingState}
             onClose={handleClosePosition}
             onAddToPosition={(id, margin, price) =>
               dispatch({ type: 'ADD_TO_POSITION', payload: { id, margin, price } })
+            }
+            onSetMarginMode={(id, mode) =>
+              dispatch({ type: 'SET_MARGIN_MODE', payload: { id, mode } })
             }
           />
         </div>

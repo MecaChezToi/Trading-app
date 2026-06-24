@@ -16,6 +16,8 @@ export const PAIRS = [
 
 export type Pair = (typeof PAIRS)[number];
 
+export type MarginMode = 'isolated' | 'cross';
+
 export interface Position {
   id: string;
   pair: string;
@@ -24,6 +26,7 @@ export interface Position {
   entryPrice: number;
   margin: number;
   leverage: number;
+  marginMode: MarginMode;
   tp: number | null;
   sl: number | null;
   openedAt: number;
@@ -35,6 +38,7 @@ export interface PendingOrder {
   side: Side;
   margin: number;
   leverage: number;
+  marginMode: MarginMode;
   limitPrice: number;
   tp: number | null;
   sl: number | null;

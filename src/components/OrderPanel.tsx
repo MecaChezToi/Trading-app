@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { IconArrowDown, IconArrowUp, IconCircleFilled } from '@tabler/icons-react';
-import { OrderType, PAIRS, Side } from '@/types/trading';
+import { OrderType, PAIRS, Side, MarginMode } from '@/types/trading';
 import { fmt, fmtPrice } from '@/lib/trading';
 import { ConnectionStatus } from '@/hooks/useBinancePrices';
 
@@ -18,6 +18,7 @@ interface OrderPanelProps {
     orderType: OrderType;
     margin: number;
     leverage: number;
+    marginMode: MarginMode;
     limitPrice?: number;
     tp?: number | null;
     sl?: number | null;
@@ -39,6 +40,7 @@ export function OrderPanel({
   const [limitPrice, setLimitPrice] = useState('');
   const [tp, setTp] = useState('');
   const [sl, setSl] = useState('');
+  const [marginMode, setMarginMode] = useState<MarginMode>('isolated');
   const [error, setError] = useState('');
 
   const price = prices[pair];
@@ -65,33 +67,22 @@ export function OrderPanel({
 
   function handleOrder(side: Side) {
     setError('');
-    if (!price) {
-      setError('Prix non disponible, attends la connexion.');
-      return;
-    }
-    if (!marginNum || marginNum <= 0) {
-      setError('Indique une marge valide.');
-      return;
-    }
-    if (marginNum > cash) {
-      setError('Marge supérieure à ton solde cash disponible.');
-      return;
-    }
+    if (!price) { setError('Prix non disponible, attends la connexion.'); return; }
+    if (!marginNum || marginNum <= 0) { setError('Indique une marge valide.'); return; }
+    if (marginNum > cash) { setError('Marge supérieure à ton solde cash disponible.'); return; }
     if (orderType === 'LIMIT' && (!limitPrice || parseFloat(limitPrice) <= 0)) {
-      setError('Indique un prix limite valide.');
-      return;
+      setError('Indique un prix limite valide.'); return;
     }
-
     onPlaceOrder({
       side,
       orderType,
       margin: marginNum,
       leverage,
+      marginMode,
       limitPrice: orderType === 'LIMIT' ? parseFloat(limitPrice) : undefined,
       tp: tp ? parseFloat(tp) : null,
       sl: sl ? parseFloat(sl) : null,
     });
-
     setMargin('');
     setLimitPrice('');
     setTp('');
@@ -107,9 +98,7 @@ export function OrderPanel({
           className="h-9 min-w-[130px] rounded-lg border border-border-soft bg-transparent px-2 text-sm outline-none"
         >
           {PAIRS.map((p) => (
-            <option key={p} value={p}>
-              {p.replace('USDT', '/USDT')}
-            </option>
+            <option key={p} value={p}>{p.replace('USDT', '/USDT')}</option>
           ))}
         </select>
         <div className="flex items-center gap-2">
@@ -122,6 +111,7 @@ export function OrderPanel({
         </span>
       </div>
 
+      {/* Market / Limit */}
       <div className="mb-3 flex gap-2">
         <button
           onClick={() => setOrderType('MARKET')}
@@ -130,9 +120,7 @@ export function OrderPanel({
               ? 'border-blue-400 bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400'
               : 'border-border-soft'
           }`}
-        >
-          Market
-        </button>
+        >Market</button>
         <button
           onClick={() => setOrderType('LIMIT')}
           className={`flex-1 rounded-lg border px-3 py-1.5 text-sm ${
@@ -140,10 +128,39 @@ export function OrderPanel({
               ? 'border-blue-400 bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400'
               : 'border-border-soft'
           }`}
+        >Limit</button>
+      </div>
+
+      {/* Isolated / Cross */}
+      <div className="mb-3 flex gap-2">
+        <button
+          onClick={() => setMarginMode('isolated')}
+          className={`flex-1 rounded-lg border px-3 py-1.5 text-sm ${
+            marginMode === 'isolated'
+              ? 'border-orange-400 bg-orange-950/20 text-orange-400'
+              : 'border-border-soft text-neutral-400'
+          }`}
         >
-          Limit
+          Isolated
+        </button>
+        <button
+          onClick={() => setMarginMode('cross')}
+          className={`flex-1 rounded-lg border px-3 py-1.5 text-sm ${
+            marginMode === 'cross'
+              ? 'border-purple-400 bg-purple-950/20 text-purple-400'
+              : 'border-border-soft text-neutral-400'
+          }`}
+        >
+          Cross
         </button>
       </div>
+
+      {/* Explication du mode sélectionné */}
+      <p className="mb-3 text-xs text-neutral-500">
+        {marginMode === 'isolated'
+          ? 'Isolated : seule la marge de cette position couvre les pertes. Risque limité à la mise.'
+          : 'Cross : tout ton solde cash sert de garantie. Résiste mieux aux fluctuations, mais une mauvaise trade peut tout perdre.'}
+      </p>
 
       <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         <div>
@@ -206,7 +223,7 @@ export function OrderPanel({
 
       {marginNum > 0 && (
         <p className="mb-2 text-xs text-neutral-500">
-          Marge: {fmt(marginNum)} → taille position: {fmt(notional)} ({leverage}x)
+          Marge: {fmt(marginNum)} → taille position: {fmt(notional)} ({leverage}x) [{marginMode}]
         </p>
       )}
 
@@ -217,15 +234,13 @@ export function OrderPanel({
           onClick={() => handleOrder('LONG')}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-400 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
         >
-          <IconArrowUp size={16} />
-          Long
+          <IconArrowUp size={16} />Long
         </button>
         <button
           onClick={() => handleOrder('SHORT')}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-400 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
         >
-          <IconArrowDown size={16} />
-          Short
+          <IconArrowDown size={16} />Short
         </button>
       </div>
     </div>

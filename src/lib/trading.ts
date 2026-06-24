@@ -49,11 +49,45 @@ export function positionPnl(pos: Position, prices: Record<string, number>): numb
 }
 
 export function liquidationPrice(pos: Position): number {
+  // Isolated : liquidation quand la marge isolée est épuisée
   const liqLossRatio = MAINTENANCE_MARGIN_RATIO / pos.leverage;
   if (pos.side === 'LONG') {
     return pos.entryPrice * (1 - liqLossRatio);
   }
   return pos.entryPrice * (1 + liqLossRatio);
+}
+
+// Cross margin : prix de liquidation basé sur le solde total disponible pour cette position
+// availableBalance = cash + sum(marges autres positions) + PnL non réalisé autres positions
+export function liquidationPriceCross(
+  pos: Position,
+  availableBalance: number
+): number {
+  // La position se liquide quand les pertes absorbent tout l'available balance
+  // Loss = (entryPrice - liqPrice) * qty pour LONG
+  // availableBalance = (entryPrice - liqPrice) * qty  →  liqPrice = entryPrice - (available / qty)
+  if (pos.side === 'LONG') {
+    return Math.max(0, pos.entryPrice - availableBalance / pos.qty);
+  }
+  // SHORT : liqPrice = entryPrice + (available / qty)
+  return pos.entryPrice + availableBalance / pos.qty;
+}
+
+// Calcule le prix de liquidation effectif selon le mode
+export function effectiveLiquidationPrice(
+  pos: Position,
+  state: TradingState,
+  prices: Record<string, number>
+): number {
+  if (pos.marginMode === 'isolated') {
+    return liquidationPrice(pos);
+  }
+  // Cross : balance totale dispo = cash + marges de TOUTES les positions + PnL non réalisé de toutes
+  const totalBalance =
+    state.cash +
+    state.positions.reduce((s, p) => s + p.margin, 0) +
+    state.positions.reduce((s, p) => s + positionPnl(p, prices), 0);
+  return liquidationPriceCross(pos, Math.max(0, totalBalance));
 }
 
 export function positionsMarginSum(state: TradingState): number {

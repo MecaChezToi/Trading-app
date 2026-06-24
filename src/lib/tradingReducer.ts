@@ -9,9 +9,9 @@ import {
 import {
   dateKey,
   dayDiff,
+  effectiveLiquidationPrice,
   fmtPrice,
   genId,
-  liquidationPrice,
   monthKey,
   nowStr,
   positionPnl,
@@ -27,6 +27,7 @@ export type TradingAction =
         margin: number;
         leverage: number;
         price: number;
+        marginMode?: import('@/types/trading').MarginMode;
         limitPrice?: number;
         tp?: number | null;
         sl?: number | null;
@@ -34,6 +35,7 @@ export type TradingAction =
     }
   | { type: 'CLOSE_POSITION'; payload: { id: string; exitPrice: number; reason?: string } }
   | { type: 'ADD_TO_POSITION'; payload: { id: string; margin: number; price: number } }
+  | { type: 'SET_MARGIN_MODE'; payload: { id: string; mode: import('@/types/trading').MarginMode } }
   | { type: 'CANCEL_PENDING_ORDER'; payload: { id: string } }
   | {
       type: 'CHECK_TRIGGERS';
@@ -135,7 +137,7 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
     }
 
     case 'PLACE_ORDER': {
-      const { pair, side, orderType, margin, leverage, price, limitPrice, tp, sl } =
+      const { pair, side, orderType, margin, leverage, price, limitPrice, tp, sl, marginMode } =
         action.payload;
       if (margin <= 0 || margin > state.cash) return state;
 
@@ -153,13 +155,14 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
           entryPrice: price,
           margin,
           leverage,
+          marginMode: marginMode ?? 'isolated',
           tp: tp ?? null,
           sl: sl ?? null,
           openedAt: Date.now(),
         });
         pushHistory(next, {
           pair,
-          type: `${side} MARKET ${leverage}x`,
+          type: `${side} MARKET ${leverage}x [${marginMode ?? 'isolated'}]`,
           price,
           amount: margin,
         });
@@ -171,6 +174,7 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
           side,
           margin,
           leverage,
+          marginMode: marginMode ?? 'isolated',
           limitPrice,
           tp: tp ?? null,
           sl: sl ?? null,
@@ -178,11 +182,27 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
         });
         pushHistory(next, {
           pair,
-          type: `LIMIT PLACED ${side}`,
+          type: `LIMIT PLACED ${side} [${marginMode ?? 'isolated'}]`,
           price: limitPrice,
           amount: margin,
         });
       }
+      return next;
+    }
+
+    case 'SET_MARGIN_MODE': {
+      const { id, mode } = action.payload;
+      const pos = state.positions.find((p) => p.id === id);
+      if (!pos || pos.marginMode === mode) return state;
+      const next = structuredClone(state);
+      const target = next.positions.find((p) => p.id === id)!;
+      target.marginMode = mode;
+      pushHistory(next, {
+        pair: pos.pair,
+        type: `MODE → ${mode.toUpperCase()}`,
+        price: 0,
+        amount: 0,
+      });
       return next;
     }
 
@@ -238,7 +258,7 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
         const price = prices[pos.pair];
         if (!price) continue;
 
-        const liqPrice = liquidationPrice(pos);
+        const liqPrice = effectiveLiquidationPrice(pos, next, prices);
         if (pos.side === 'LONG' && price <= liqPrice) {
           closePositionInternal(next, pos.id, liqPrice, 'LIQUIDATION', prices);
           changed = true;
@@ -289,6 +309,7 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
             entryPrice: order.limitPrice,
             margin: order.margin,
             leverage: order.leverage,
+            marginMode: order.marginMode ?? 'isolated',
             tp: order.tp,
             sl: order.sl,
             openedAt: Date.now(),
