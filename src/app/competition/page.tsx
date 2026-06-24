@@ -203,6 +203,9 @@ export default function CompetitionPage() {
             onUpdateTpSl={(id, tp, sl) =>
               dispatch({ type: 'UPDATE_TP_SL', payload: { id, tp, sl } })
             }
+            onUpdatePartialTPs={(id, partialTPs) =>
+              dispatch({ type: 'UPDATE_PARTIAL_TPS', payload: { id, partialTPs } })
+            }
           />
         </div>
 

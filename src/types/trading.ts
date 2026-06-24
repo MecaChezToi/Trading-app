@@ -18,6 +18,13 @@ export type Pair = (typeof PAIRS)[number];
 
 export type MarginMode = 'isolated' | 'cross';
 
+export interface PartialTP {
+  id: string;
+  price: number;   // prix cible
+  pct: number;     // % de la position originale à fermer
+  triggered: boolean;
+}
+
 export interface Position {
   id: string;
   pair: string;
@@ -27,6 +34,7 @@ export interface Position {
   margin: number;
   leverage: number;
   marginMode: MarginMode;
+  partialTPs: PartialTP[];
   tp: number | null;
   sl: number | null;
   openedAt: number;

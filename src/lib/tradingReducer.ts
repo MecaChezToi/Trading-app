@@ -36,6 +36,7 @@ export type TradingAction =
   | { type: 'CLOSE_POSITION'; payload: { id: string; exitPrice: number; reason?: string } }
   | { type: 'PARTIAL_CLOSE'; payload: { id: string; pct: number; exitPrice: number } }
   | { type: 'UPDATE_TP_SL'; payload: { id: string; tp: number | null; sl: number | null } }
+  | { type: 'UPDATE_PARTIAL_TPS'; payload: { id: string; partialTPs: import('@/types/trading').PartialTP[] } }
   | { type: 'ADD_TO_POSITION'; payload: { id: string; margin: number; price: number } }
   | { type: 'SWITCH_MARGIN_MODE'; payload: { id: string; mode: import('@/types/trading').MarginMode; currentPrice: number } }
   | { type: 'CANCEL_PENDING_ORDER'; payload: { id: string } }
@@ -158,6 +159,7 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
           margin,
           leverage,
           marginMode: marginMode ?? 'isolated',
+          partialTPs: [],
           tp: tp ?? null,
           sl: sl ?? null,
           openedAt: Date.now(),
@@ -216,6 +218,7 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
           entryPrice: currentPrice,
           margin: newMargin,
           marginMode: mode,
+          partialTPs: pos.partialTPs ?? [],
           openedAt: Date.now(),
         });
         pushHistory(next, {
@@ -305,6 +308,16 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
       return next;
     }
 
+    case 'UPDATE_PARTIAL_TPS': {
+      const { id, partialTPs } = action.payload;
+      const pos = state.positions.find((p) => p.id === id);
+      if (!pos) return state;
+      const next = structuredClone(state);
+      const target = next.positions.find((p) => p.id === id)!;
+      target.partialTPs = partialTPs;
+      return next;
+    }
+
     case 'UPDATE_TP_SL': {
       const { id, tp, sl } = action.payload;
       const pos = state.positions.find((p) => p.id === id);
@@ -365,6 +378,63 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
             continue;
           }
         }
+
+        // Partial TPs — par ordre de prix croissant (LONG) ou décroissant (SHORT)
+        if (pos.partialTPs && pos.partialTPs.length > 0) {
+          const pendingTPs = pos.partialTPs.filter((t) => !t.triggered);
+          for (const ptp of pendingTPs) {
+            const hit =
+              (pos.side === 'LONG' && price >= ptp.price) ||
+              (pos.side === 'SHORT' && price <= ptp.price);
+            if (hit) {
+              // Fermeture partielle
+              const ratio = ptp.pct / 100;
+              const closedQty = pos.qty * ratio;
+              const closedMargin = pos.margin * ratio;
+              const priceDiff = pos.side === 'LONG'
+                ? ptp.price - pos.entryPrice
+                : pos.entryPrice - ptp.price;
+              const realizedPnl = priceDiff * closedQty;
+              const returned = Math.max(0, closedMargin + realizedPnl);
+
+              const target = next.positions.find((p) => p.id === pos.id);
+              if (target) {
+                target.qty -= closedQty;
+                target.margin -= closedMargin;
+                target.partialTPs = target.partialTPs.map((t) =>
+                  t.id === ptp.id ? { ...t, triggered: true } : t
+                );
+                next.cash += returned;
+
+                pushHistory(next, {
+                  pair: pos.pair,
+                  type: `TP PARTIEL ${ptp.pct}% @ ${fmtPrice(ptp.price)}`,
+                  price: ptp.price,
+                  amount: returned,
+                });
+                next.closedTrades.push({
+                  id: genId(),
+                  timestamp: Date.now(),
+                  dateKey: dateKey(),
+                  monthKey: monthKey(),
+                  pair: pos.pair,
+                  pnl: realizedPnl,
+                });
+                next.pendingNotifications.push({
+                  id: genId(),
+                  title: `TP partiel ${ptp.pct}% - ${pos.pair.replace('USDT', '/USDT')}`,
+                  body: `${ptp.pct}% fermé à ${fmtPrice(ptp.price)} · PnL ${realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)}$`,
+                });
+
+                // Si position quasi vide, la supprimer
+                if (target.qty < 0.000001) {
+                  next.positions = next.positions.filter((p) => p.id !== pos.id);
+                }
+                changed = true;
+              }
+            }
+          }
+        }
         if (pos.sl) {
           if (
             (pos.side === 'LONG' && price <= pos.sl) ||
@@ -395,6 +465,7 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
             margin: order.margin,
             leverage: order.leverage,
             marginMode: order.marginMode ?? 'isolated',
+            partialTPs: [],
             tp: order.tp,
             sl: order.sl,
             openedAt: Date.now(),
