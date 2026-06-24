@@ -211,12 +211,45 @@ function TpSlPanel({ pos, onConfirmTpSl, onConfirmPartialTPs, onCancel }: {
             </div>
           )}
 
-          {(preview.tp || preview.sl) && (
-            <div className="mb-3 flex gap-3 rounded bg-surface-muted px-3 py-1.5 text-xs">
-              {preview.tp && <span>TP: <span className="text-emerald-400">{fmtPrice(preview.tp)}</span></span>}
-              {preview.sl && <span>SL: <span className="text-red-400">{fmtPrice(preview.sl)}</span></span>}
-            </div>
-          )}
+          {(preview.tp || preview.sl) && (() => {
+            const pnlForPrice = (targetPrice: number) => {
+              const priceDiff = pos.side === 'LONG'
+                ? targetPrice - pos.entryPrice
+                : pos.entryPrice - targetPrice;
+              return priceDiff * pos.qty;
+            };
+            const pnlPctForPrice = (targetPrice: number) =>
+              (pnlForPrice(targetPrice) / pos.margin) * 100;
+
+            return (
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                {preview.tp && (
+                  <div className="rounded-lg bg-emerald-950/20 border border-emerald-500/20 p-2.5">
+                    <p className="text-[10px] text-emerald-400/70 mb-1">Si TP touché</p>
+                    <p className="text-xs font-medium text-emerald-400">{fmtPrice(preview.tp)}</p>
+                    <p className="text-sm font-semibold text-emerald-400">
+                      +{fmt(pnlForPrice(preview.tp))}
+                    </p>
+                    <p className="text-xs text-emerald-400/70">
+                      +{pnlPctForPrice(preview.tp).toFixed(2)}% sur marge
+                    </p>
+                  </div>
+                )}
+                {preview.sl && (
+                  <div className="rounded-lg bg-red-950/20 border border-red-500/20 p-2.5">
+                    <p className="text-[10px] text-red-400/70 mb-1">Si SL touché</p>
+                    <p className="text-xs font-medium text-red-400">{fmtPrice(preview.sl)}</p>
+                    <p className="text-sm font-semibold text-red-400">
+                      {fmt(pnlForPrice(preview.sl))}
+                    </p>
+                    <p className="text-xs text-red-400/70">
+                      {pnlPctForPrice(preview.sl).toFixed(2)}% sur marge
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <div className="flex gap-2">
             <button onClick={() => onConfirmTpSl(preview.tp, preview.sl)}
@@ -240,19 +273,31 @@ function TpSlPanel({ pos, onConfirmTpSl, onConfirmPartialTPs, onCancel }: {
           {/* Niveaux existants */}
           {partialTPs.length > 0 && (
             <div className="mb-3 flex flex-col gap-1">
-              {[...partialTPs].sort((a, b) => isLong ? a.price - b.price : b.price - a.price).map((t) => (
-                <div key={t.id} className="flex items-center gap-2 rounded bg-surface-muted px-2.5 py-1.5 text-xs">
-                  <span className="text-emerald-400 font-medium">{fmtPrice(t.price)}</span>
-                  <span className="text-neutral-500">→ ferme</span>
-                  <span className="font-medium">{t.pct}%</span>
-                  <span className="ml-auto text-neutral-500">
-                    ({pos.side === 'LONG' ? '+' : '-'}{(Math.abs(t.price - pos.entryPrice) / pos.entryPrice * 100).toFixed(2)}% depuis entrée)
-                  </span>
-                  <button onClick={() => removePartialTP(t.id)} className="text-neutral-500 hover:text-red-400">
-                    <IconTrash size={13} />
-                  </button>
-                </div>
-              ))}
+              {[...partialTPs].sort((a, b) => isLong ? a.price - b.price : b.price - a.price).map((t) => {
+                const priceDiff = isLong ? t.price - pos.entryPrice : pos.entryPrice - t.price;
+                const closedQty = pos.qty * (t.pct / 100);
+                const estimatedPnl = priceDiff * closedQty;
+                const estimatedPnlPct = (estimatedPnl / (pos.margin * t.pct / 100)) * 100;
+                return (
+                  <div key={t.id} className="flex items-center gap-2 rounded bg-surface-muted px-2.5 py-2 text-xs">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-emerald-400 font-medium">{fmtPrice(t.price)}</span>
+                        <span className="text-neutral-500">→ ferme <span className="text-foreground font-medium">{t.pct}%</span></span>
+                        <span className="text-neutral-500 text-[10px]">
+                          ({isLong ? '+' : '-'}{(Math.abs(t.price - pos.entryPrice) / pos.entryPrice * 100).toFixed(2)}% depuis entrée)
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[10px] text-emerald-400">
+                        Estimation : +{fmt(estimatedPnl)} (+{estimatedPnlPct.toFixed(1)}% sur marge partielle)
+                      </p>
+                    </div>
+                    <button onClick={() => removePartialTP(t.id)} className="shrink-0 text-neutral-500 hover:text-red-400">
+                      <IconTrash size={13} />
+                    </button>
+                  </div>
+                );
+              })}
               <div className="flex justify-between px-1 text-[10px] text-neutral-500">
                 <span>Total fermé: {totalPct}%</span>
                 <span>Restant: {100 - totalPct}%</span>
@@ -305,6 +350,20 @@ function TpSlPanel({ pos, onConfirmTpSl, onConfirmPartialTPs, onCancel }: {
                   </div>
                 </div>
               </div>
+              {/* Estimation pour le TP partiel en cours de saisie */}
+              {partialPrice && parseFloat(newPct) > 0 && (() => {
+                const pct = parseFloat(newPct);
+                const priceDiff = isLong ? partialPrice - pos.entryPrice : pos.entryPrice - partialPrice;
+                const closedQty = pos.qty * (pct / 100);
+                const estPnl = priceDiff * closedQty;
+                const estPnlPct = (estPnl / (pos.margin * pct / 100)) * 100;
+                const positive = estPnl >= 0;
+                return (
+                  <div className={`mb-2 rounded px-2.5 py-1.5 text-[10px] ${positive ? 'bg-emerald-950/20 text-emerald-400' : 'bg-red-950/20 text-red-400'}`}>
+                    Estimation si touché : {positive ? '+' : ''}{fmt(estPnl)} ({positive ? '+' : ''}{estPnlPct.toFixed(1)}% sur marge partielle)
+                  </div>
+                );
+              })()}
               <button onClick={addPartialTP}
                 disabled={!computePartialPrice() || !parseFloat(newPct) || totalPct + parseFloat(newPct || '0') > 100}
                 className="flex w-full items-center justify-center gap-1 rounded border border-emerald-500/50 py-1 text-xs text-emerald-400 hover:bg-emerald-950/30 disabled:cursor-not-allowed disabled:opacity-40">
