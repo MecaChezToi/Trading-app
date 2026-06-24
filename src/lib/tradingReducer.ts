@@ -34,8 +34,10 @@ export type TradingAction =
       };
     }
   | { type: 'CLOSE_POSITION'; payload: { id: string; exitPrice: number; reason?: string } }
+  | { type: 'PARTIAL_CLOSE'; payload: { id: string; pct: number; exitPrice: number } }
+  | { type: 'UPDATE_TP_SL'; payload: { id: string; tp: number | null; sl: number | null } }
   | { type: 'ADD_TO_POSITION'; payload: { id: string; margin: number; price: number } }
-  | { type: 'SET_MARGIN_MODE'; payload: { id: string; mode: import('@/types/trading').MarginMode } }
+  | { type: 'SWITCH_MARGIN_MODE'; payload: { id: string; mode: import('@/types/trading').MarginMode; currentPrice: number } }
   | { type: 'CANCEL_PENDING_ORDER'; payload: { id: string } }
   | {
       type: 'CHECK_TRIGGERS';
@@ -190,19 +192,39 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
       return next;
     }
 
-    case 'SET_MARGIN_MODE': {
+    case 'SWITCH_MARGIN_MODE': {
+      // En vrai trading, changer le mode ferme la position et la réouvre dans le nouveau mode
       const { id, mode } = action.payload;
       const pos = state.positions.find((p) => p.id === id);
       if (!pos || pos.marginMode === mode) return state;
+      const currentPrice = action.payload.currentPrice ?? pos.entryPrice;
+
       const next = structuredClone(state);
-      const target = next.positions.find((p) => p.id === id)!;
-      target.marginMode = mode;
-      pushHistory(next, {
-        pair: pos.pair,
-        type: `MODE → ${mode.toUpperCase()}`,
-        price: 0,
-        amount: 0,
-      });
+      // 1. Fermer la position au prix actuel
+      closePositionInternal(next, id, currentPrice, `CLOSE (switch → ${mode.toUpperCase()})`, {});
+      // 2. Réouvrir avec le nouveau mode, même paramètres, marge = cash récupéré (approx)
+      const priceDiff = pos.side === 'LONG'
+        ? currentPrice - pos.entryPrice
+        : pos.entryPrice - currentPrice;
+      const realizedPnl = priceDiff * pos.qty;
+      const newMargin = Math.max(0, pos.margin + realizedPnl);
+      if (newMargin > 0 && next.cash >= newMargin) {
+        next.cash -= newMargin;
+        next.positions.push({
+          ...pos,
+          id: genId(),
+          entryPrice: currentPrice,
+          margin: newMargin,
+          marginMode: mode,
+          openedAt: Date.now(),
+        });
+        pushHistory(next, {
+          pair: pos.pair,
+          type: `REOPEN ${mode.toUpperCase()} ${pos.leverage}x`,
+          price: currentPrice,
+          amount: newMargin,
+        });
+      }
       return next;
     }
 
@@ -234,6 +256,69 @@ export function tradingReducer(state: TradingState, action: TradingAction): Trad
         amount: margin,
       });
 
+      return next;
+    }
+
+    case 'PARTIAL_CLOSE': {
+      const { id, pct, exitPrice } = action.payload;
+      if (pct <= 0 || pct > 100) return state;
+      const pos = state.positions.find((p) => p.id === id);
+      if (!pos) return state;
+
+      const next = structuredClone(state);
+      const target = next.positions.find((p) => p.id === id)!;
+      const ratio = pct / 100;
+      const closedQty = target.qty * ratio;
+      const closedMargin = target.margin * ratio;
+
+      const priceDiff = target.side === 'LONG'
+        ? exitPrice - target.entryPrice
+        : target.entryPrice - exitPrice;
+      const realizedPnl = priceDiff * closedQty;
+      const returned = Math.max(0, closedMargin + realizedPnl);
+
+      next.cash += returned;
+      target.qty -= closedQty;
+      target.margin -= closedMargin;
+
+      pushHistory(next, {
+        pair: pos.pair,
+        type: `PARTIAL CLOSE ${pct}%`,
+        price: exitPrice,
+        amount: returned,
+      });
+
+      next.closedTrades.push({
+        id: genId(),
+        timestamp: Date.now(),
+        dateKey: dateKey(),
+        monthKey: monthKey(),
+        pair: pos.pair,
+        pnl: realizedPnl,
+      });
+
+      // si la position est quasi vide, on la ferme complètement
+      if (target.qty < 0.000001) {
+        next.positions = next.positions.filter((p) => p.id !== id);
+      }
+
+      return next;
+    }
+
+    case 'UPDATE_TP_SL': {
+      const { id, tp, sl } = action.payload;
+      const pos = state.positions.find((p) => p.id === id);
+      if (!pos) return state;
+      const next = structuredClone(state);
+      const target = next.positions.find((p) => p.id === id)!;
+      target.tp = tp;
+      target.sl = sl;
+      pushHistory(next, {
+        pair: pos.pair,
+        type: `UPDATE TP/SL`,
+        price: 0,
+        amount: 0,
+      });
       return next;
     }
 

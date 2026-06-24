@@ -191,11 +191,17 @@ export default function CompetitionPage() {
             cash={tradingState.cash}
             tradingState={tradingState}
             onClose={handleClosePosition}
+            onPartialClose={(id, pct, exitPrice) =>
+              dispatch({ type: 'PARTIAL_CLOSE', payload: { id, pct, exitPrice } })
+            }
             onAddToPosition={(id, margin, price) =>
               dispatch({ type: 'ADD_TO_POSITION', payload: { id, margin, price } })
             }
-            onSetMarginMode={(id, mode) =>
-              dispatch({ type: 'SET_MARGIN_MODE', payload: { id, mode } })
+            onSwitchMarginMode={(id, mode, currentPrice) =>
+              dispatch({ type: 'SWITCH_MARGIN_MODE', payload: { id, mode, currentPrice } })
+            }
+            onUpdateTpSl={(id, tp, sl) =>
+              dispatch({ type: 'UPDATE_TP_SL', payload: { id, tp, sl } })
             }
           />
         </div>
